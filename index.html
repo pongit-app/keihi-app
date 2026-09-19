@@ -116,7 +116,7 @@ h2 select{width:auto;font-size:13px;padding:4px 8px;margin-left:6px}
 <body>
 <header>
   <div><span class="brand">経費帳</span><span class="ver" id="ver"></span></div>
-  <button id="themeBtn" title="テーマ切替">🌙</button>
+  <div><button id="cloudBtn" title="同期">☁️</button> <button id="themeBtn" title="テーマ切替">🌙</button></div>
 </header>
 <main>
 
@@ -168,7 +168,7 @@ h2 select{width:auto;font-size:13px;padding:4px 8px;margin-left:6px}
         <label class="btn">🖼 写真・スクショから選ぶ<input type="file" accept="image/*" multiple hidden id="fPick"></label>
       </div>
       <div class="thumbs" id="fThumbs"></div>
-      <p class="hint">Macでは画面にスクショを ⌘V で貼り付けても追加できます。画像は長辺2000pxに縮小して端末内に保存します。</p>
+      <p class="hint">Macでは画面にスクショを ⌘V で貼り付けても追加できます。画像は長辺1800pxに縮小して端末内に保存します。</p>
     </div>
   </div>
   <button class="btn primary" id="saveBtn">保存する</button>
@@ -210,6 +210,15 @@ h2 select{width:auto;font-size:13px;padding:4px 8px;margin-left:6px}
 
 <!-- ===== 設定 ===== -->
 <section class="view" id="v-set">
+  <div class="card" id="syncCard">
+    <h2>同期（スマホ ⇄ パソコン）</h2>
+    <label class="f"><span>保存先（GitHubの非公開リポジトリ）</span><input type="text" id="syncRepo" placeholder="pongit-app/keihi-data"></label>
+    <label class="f"><span>アクセストークン（この端末にだけ保存）</span><input type="password" id="syncToken" placeholder="github_pat_…" autocomplete="off"></label>
+    <label class="chk"><input type="checkbox" id="syncAuto" checked> 変更したら自動で同期する（3秒後）</label>
+    <div class="btns"><button class="btn" id="syncTestBtn">接続テスト</button><button class="btn primary" id="syncNowBtn" style="width:auto;flex:1">今すぐ同期</button></div>
+    <p class="hint" id="syncStatus"></p>
+    <p class="hint">記録・設定・領収書画像を非公開リポジトリに保存し、開いたときと変更したときに他の端末と合わせます。同じ記録を両方で直した場合は新しい方が残ります。削除も同期されます。<br>トークンの作り方: GitHub → 右上アイコン → Settings → Developer settings → Personal access tokens → <b>Fine-grained tokens</b> → Generate new token。Repository access は「Only select repositories」で keihi-data を選び、Permissions の Repository permissions で <b>Contents: Read and write</b> にして生成。表示された github_pat_… を上に貼り付けて「接続テスト」。有効期限（最長1年）が切れたら作り直して貼り替えます。</p>
+  </div>
   <div class="card">
     <h2>毎月のサブスク</h2>
     <div id="subList"></div>
@@ -276,6 +285,7 @@ h2 select{width:auto;font-size:13px;padding:4px 8px;margin-left:6px}
   <div class="card">
     <h2>危険な操作</h2>
     <button class="btn danger" id="wipeBtn">この端末のデータを全部消す</button>
+    <p class="hint">この端末の中身だけ消します。同期先には残るので、次の同期で戻ってきます。</p>
   </div>
 </section>
 </main>
@@ -300,7 +310,7 @@ var KEY='keihi.v1', KEY_LOG='keihi.log.v1', KEY_SET='keihi.settings.v1';
 var EXPENSE_ACCOUNTS=['租税公課','荷造運賃','水道光熱費','旅費交通費','通信費','広告宣伝費','接待交際費','損害保険料','修繕費','消耗品費','福利厚生費','給料賃金','外注工賃','利子割引料','地代家賃','貸倒金','新聞図書費','支払手数料','研修費','会議費','雑費'];
 var INCOME_ACCOUNTS=['売上','雑収入'];
 var TYPE_LABEL={expense:'支出',income:'収入',startup:'開業費'};
-var MAX_EDGE=2000, JPEG_Q=0.85;
+var MAX_EDGE=1800, JPEG_Q=0.8;
 var QUICK={expense:[
   ['サーバー・ドメイン','通信費','サーバー代',''],['スマホ・ネット代','通信費','通信料',''],['ソフト・サブスク','通信費','サブスク利用料',''],
   ['機材・小物','消耗品費','',''],['素材・音源','消耗品費','素材購入',''],['本・教材','新聞図書費','',''],['講座・コミュニティ','研修費','',''],
@@ -313,9 +323,9 @@ var records=load(KEY,[]), log=load(KEY_LOG,[]), settings=load(KEY_SET,{});
 settings.customAccounts=settings.customAccounts||[];settings.mfSource=settings.mfSource||'private';settings.mfRatio=settings.mfRatio||'after';settings.subs=settings.subs||[];settings.openDate=settings.openDate||'';
 var curType='expense', pendingImages=[], editing=null, onlyNoPic=false, onlyPending=false;
 function load(k,d){try{var v=localStorage.getItem(k);return v?JSON.parse(v):d}catch(e){return d}}
-function save(){localStorage.setItem(KEY,JSON.stringify(records))}
+function save(q){localStorage.setItem(KEY,JSON.stringify(records));if(!q)scheduleSync()}
 function saveLog(){localStorage.setItem(KEY_LOG,JSON.stringify(log.slice(-500)))}
-function saveSet(){localStorage.setItem(KEY_SET,JSON.stringify(settings))}
+function saveSet(q){if(!q)settings.updatedAt=new Date().toISOString();localStorage.setItem(KEY_SET,JSON.stringify(settings));if(!q)scheduleSync()}
 function uid(){return Date.now().toString(36)+Math.random().toString(36).slice(2,7)}
 function yen(n){return '¥'+Math.round(n).toLocaleString('ja-JP')}
 function today(){var d=new Date();return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0')}
@@ -346,14 +356,14 @@ function receiptName(r,i){return r.date+'_'+(r.memo||r.payee||'領収書').repla
 
 // ---------- 入力 ----------
 function fillAccounts(sel,type,val){sel.innerHTML='';accounts(type).forEach(function(a){var o=document.createElement('option');o.textContent=a;sel.appendChild(o)});if(val){sel.value=val;if(sel.value!==val){var o=document.createElement('option');o.textContent=val;sel.appendChild(o);sel.value=val}}}
-function fillPayees(){var dl=$('payeeList'),seen={};dl.innerHTML='';records.slice().reverse().forEach(function(r){if(r.payee&&!seen[r.payee]){seen[r.payee]=1;var o=document.createElement('option');o.value=r.payee;dl.appendChild(o)}})}
+function fillPayees(){var dl=$('payeeList'),seen={};dl.innerHTML='';live().slice().reverse().forEach(function(r){if(r.payee&&!seen[r.payee]){seen[r.payee]=1;var o=document.createElement('option');o.value=r.payee;dl.appendChild(o)}})}
 function setType(t){curType=t;document.querySelectorAll('#typeSeg button').forEach(function(b){b.classList.toggle('on',b.dataset.t===t)});fillAccounts($('fAccount'),t);$('ratioWrap').style.visibility=t==='income'?'hidden':'visible';$('startupWrap').style.display=t==='startup'?'block':'none';renderQuick();checkForm()}
 function renderQuick(){var q=$('quick');q.innerHTML='';QUICK[curType].forEach(function(d){var b=document.createElement('button');b.type='button';b.textContent=d[0];b.onclick=function(){$('fAccount').value=d[1];var m=$('fMemo'),p=$('fPayee');if(d[2]&&!m.value)m.value=d[2];if(d[3]&&!p.value)p.value=d[3];q.querySelectorAll('button').forEach(function(x){x.classList.toggle('on',x===b)});checkForm();$('fAmount').focus()};q.appendChild(b)})}
 document.querySelectorAll('#typeSeg button').forEach(function(b){b.onclick=function(){setType(b.dataset.t)}});
 $('fCam').onchange=function(){addFiles(this.files,pendingImages,renderPending);this.value=''};
 $('fPick').onchange=function(){addFiles(this.files,pendingImages,renderPending);this.value=''};
 function renderPending(){renderThumbs($('fThumbs'),pendingImages,function(i){pendingImages.splice(i,1);renderPending()})}
-document.addEventListener('paste',function(e){var items=e.clipboardData&&e.clipboardData.items;if(!items)return;var fs=[];for(var i=0;i<items.length;i++){if(items[i].kind==='file'){var f=items[i].getAsFile();if(f)fs.push(f)}}if(!fs.length)return;if(editing){addFiles(fs,editing.images,renderEditThumbs)}else{showView('input');addFiles(fs,pendingImages,renderPending)}});
+document.addEventListener('paste',function(e){var items=e.clipboardData&&e.clipboardData.items;if(!items)return;var fs=[];for(var i=0;i<items.length;i++){if(items[i].kind==='file'){var f=items[i].getAsFile();if(f)fs.push(f)}}if(!fs.length)return;if(editing){addFiles(fs,editing.images,editImgChanged)}else{showView('input');addFiles(fs,pendingImages,renderPending)}});
 // 入力チェック（開業前・10万円・会議費）
 function formAlerts(o){var out=[];
   if(o.type==='expense'&&settings.openDate&&o.date&&o.date<settings.openDate)out.push('開業日（'+settings.openDate+'）より前の日付です。開業前の準備費用なら種別を「開業費」にしてください。');
@@ -373,14 +383,14 @@ $('saveBtn').onclick=function(){
   if(f.invoice&&!/^T\d{13}$/.test(f.invoice)){if(!confirm('インボイス番号の形式が違います（T＋13桁）。このまま保存しますか？'))return}
   var r=Object.assign({id:uid()},f,{pics:pendingImages.length,createdAt:new Date().toISOString(),updatedAt:new Date().toISOString()});
   var imgs=pendingImages.slice();records.push(r);save();
-  putImages(r.id,imgs).then(function(){toast('保存しました');refreshAll();resetForm();$('recentHint').textContent='直前: '+r.date+' '+TYPE_LABEL[r.type]+' '+r.account+' '+yen(r.amount)+(r.payee?' '+r.payee:'')}).catch(function(e){alert('画像の保存に失敗: '+e.message)});
+  putImages(r.id,imgs).then(function(){if(imgs.length)bumpImg(r.id,imgs.length);toast('保存しました');refreshAll();resetForm();$('recentHint').textContent='直前: '+r.date+' '+TYPE_LABEL[r.type]+' '+r.account+' '+yen(r.amount)+(r.payee?' '+r.payee:'')}).catch(function(e){alert('画像の保存に失敗: '+e.message)});
 };
 
 // ---------- 一覧 ----------
-function periods(){var set={};records.forEach(function(r){set[r.date.slice(0,7)]=1;set[r.date.slice(0,4)]=1});var ks=Object.keys(set).sort().reverse();var ym=today().slice(0,7);if(!set[ym])ks.unshift(ym);return ks}
+function periods(){var set={};live().forEach(function(r){set[r.date.slice(0,7)]=1;set[r.date.slice(0,4)]=1});var ks=Object.keys(set).sort().reverse();var ym=today().slice(0,7);if(!set[ym])ks.unshift(ym);return ks}
 function fillPeriods(){var s=$('lPeriod'),v=s.value;s.innerHTML='<option value="">すべて</option>';periods().forEach(function(p){var o=document.createElement('option');o.value=p;o.textContent=p.length===4?p+'年 全体':p.replace('-','年')+'月';s.appendChild(o)});s.value=v||today().slice(0,7);if(s.selectedIndex<0)s.value=''}
 function filtered(){var p=$('lPeriod').value,t=$('lType').value,q=$('lSearch').value.trim().toLowerCase().split(/\s+/).filter(Boolean);
-  return records.filter(function(r){if(p&&r.date.indexOf(p)!==0)return false;if(t&&r.type!==t)return false;if(onlyNoPic&&r.pics)return false;if(onlyPending&&!r.pending)return false;
+  return live().filter(function(r){if(p&&r.date.indexOf(p)!==0)return false;if(t&&r.type!==t)return false;if(onlyNoPic&&r.pics)return false;if(onlyPending&&!r.pending)return false;
     if(q.length){var hay=[r.payee,r.memo,r.account,r.amount,r.date,r.pay,r.note,r.fx,r.treatment].join(' ').toLowerCase();return q.every(function(w){return hay.indexOf(w)>=0})}return true}).sort(function(a,b){return a.date<b.date?1:a.date>b.date?-1:(a.createdAt<b.createdAt?1:-1)})}
 function renderList(){var box=$('listBox'),rs=filtered();box.innerHTML='';var tin=0,tout=0,tst=0;
   rs.forEach(function(r){var v=counted(r);if(r.type==='income')tin+=v;else if(isStartup(r))tst+=v;else tout+=v;var d=document.createElement('div');d.className='item';var dt=r.date.split('-');
@@ -401,7 +411,7 @@ $('mdBtn').onclick=function(){var rs=filtered().slice().sort(function(a,b){retur
   download('expenses_'+p+'.md',new Blob([L.join('\n')],{type:'text/markdown'}));toast('Markdownを書き出しました')};
 
 // ---------- 編集シート ----------
-function openEdit(id){var r=records.filter(function(x){return x.id===id})[0];if(!r)return;editing={id:id,images:[]};
+function openEdit(id){var r=live().filter(function(x){return x.id===id})[0];if(!r)return;editing={id:id,images:[]};
   var b=$('sheetBody');
   b.innerHTML='<div class="seg" id="eSeg">'+['expense','income','startup'].map(function(t){return '<button data-t="'+t+'" '+(r.type===t?'class="on"':'')+'>'+TYPE_LABEL[t]+'</button>'}).join('')+'</div>'
   +'<div id="eStartupWrap" style="display:'+(r.type==='startup'?'block':'none')+'"><label class="f"><span>扱い</span><select id="eTreat"><option>開業費</option><option>少額減価償却特例</option></select></label></div>'
@@ -421,28 +431,29 @@ function openEdit(id){var r=records.filter(function(x){return x.id===id})[0];if(
   function eCheck(){b.querySelector('#eAlerts').innerHTML=formAlerts(eRead()).map(function(a){return '<div class="alert">'+esc(a)+'</div>'}).join('')}
   ['eDate','eAmount','eAccount','ePeople','eInvoice'].forEach(function(id){b.querySelector('#'+id).addEventListener('input',eCheck)});eCheck();
   b.querySelectorAll('#eSeg button').forEach(function(x){x.onclick=function(){et=x.dataset.t;b.querySelectorAll('#eSeg button').forEach(function(y){y.classList.toggle('on',y===x)});fillAccounts(b.querySelector('#eAccount'),et);b.querySelector('#eStartupWrap').style.display=et==='startup'?'block':'none';eCheck()}});
-  b.querySelector('#eCam').onchange=function(){addFiles(this.files,editing.images,renderEditThumbs);this.value=''};
-  b.querySelector('#ePick').onchange=function(){addFiles(this.files,editing.images,renderEditThumbs);this.value=''};
+  b.querySelector('#eCam').onchange=function(){addFiles(this.files,editing.images,editImgChanged);this.value=''};
+  b.querySelector('#ePick').onchange=function(){addFiles(this.files,editing.images,editImgChanged);this.value=''};
   b.querySelector('#eClose').onclick=closeSheet;
-  b.querySelector('#eDel').onclick=function(){if(!confirm('この記録を削除しますか？（履歴には残ります）'))return;log.push({ts:new Date().toISOString(),action:'削除',before:r});saveLog();records=records.filter(function(x){return x.id!==id});save();delImages(id);closeSheet();refreshAll();toast('削除しました')};
+  b.querySelector('#eDel').onclick=function(){if(!confirm('この記録を削除しますか？（履歴には残ります）'))return;log.push({ts:new Date().toISOString(),action:'削除',before:r});saveLog();records=records.map(function(x){return x.id===id?Object.assign({},x,{deleted:true,pics:0,updatedAt:new Date().toISOString()}):x});save();delImages(id);bumpImg(id,0);closeSheet();refreshAll();toast('削除しました')};
   b.querySelector('#eSave').onclick=function(){var f=eRead();if(!(f.amount>0)){alert('金額を入れてください');return}
     var n=Object.assign({id:id},f,{pics:editing.images.length,createdAt:r.createdAt,updatedAt:new Date().toISOString()});
     var changed=Object.keys(n).some(function(k){return k!=='updatedAt'&&String(r[k]==null?'':r[k])!==String(n[k]==null?'':n[k])});
     if(changed){log.push({ts:n.updatedAt,action:'訂正',before:r,after:n});saveLog()}
     records=records.map(function(x){return x.id===id?n:x});save();
-    putImages(id,editing.images.slice()).then(function(){closeSheet();refreshAll();toast('更新しました')})};
+    var chg=editing.imgChanged,nimg=editing.images.length;putImages(id,editing.images.slice()).then(function(){if(chg)bumpImg(id,nimg);closeSheet();refreshAll();toast('更新しました')})};
   editing.rec=r;getImages(id).then(function(bs){editing.images=bs.slice();renderEditThumbs()});
   $('sheetBg').classList.add('on');$('sheet').classList.add('on')}
-function renderEditThumbs(){if(!editing)return;var r=editing.rec;renderThumbs($('eThumbs'),editing.images,function(i){editing.images.splice(i,1);renderEditThumbs()},function(i){return receiptName(r,i)})}
+function renderEditThumbs(){if(!editing)return;var r=editing.rec;renderThumbs($('eThumbs'),editing.images,function(i){editing.images.splice(i,1);editImgChanged()},function(i){return receiptName(r,i)})}
+function editImgChanged(){if(editing)editing.imgChanged=true;renderEditThumbs()}
 function closeSheet(){editing=null;$('sheetBg').classList.remove('on');$('sheet').classList.remove('on')}
 $('sheetBg').onclick=closeSheet;
 
 // ---------- 集計 ----------
-function fillYears(){var s=$('sYear'),v=s.value,ys={};records.forEach(function(r){ys[r.date.slice(0,4)]=1});ys[today().slice(0,4)]=1;s.innerHTML='';Object.keys(ys).sort().reverse().forEach(function(y){var o=document.createElement('option');o.value=y;o.textContent=y+'年';s.appendChild(o)});s.value=v||today().slice(0,4);if(s.selectedIndex<0)s.selectedIndex=0}
-function renderSum(){var y=$('sYear').value,rs=records.filter(function(r){return r.date.slice(0,4)===y&&!isStartup(r)});var tin=0,tout=0,acc={},cnt={},mon={};
+function fillYears(){var s=$('sYear'),v=s.value,ys={};live().forEach(function(r){ys[r.date.slice(0,4)]=1});ys[today().slice(0,4)]=1;s.innerHTML='';Object.keys(ys).sort().reverse().forEach(function(y){var o=document.createElement('option');o.value=y;o.textContent=y+'年';s.appendChild(o)});s.value=v||today().slice(0,4);if(s.selectedIndex<0)s.selectedIndex=0}
+function renderSum(){var y=$('sYear').value,rs=live().filter(function(r){return r.date.slice(0,4)===y&&!isStartup(r)});var tin=0,tout=0,acc={},cnt={},mon={};
   rs.forEach(function(r){var v=counted(r),k=(r.type==='income'?'income:':'expense:')+r.account;if(r.type==='income')tin+=v;else tout+=v;acc[k]=(acc[k]||0)+v;cnt[k]=(cnt[k]||0)+1;var m=r.date.slice(5,7);mon[m]=mon[m]||{i:0,o:0};if(r.type==='income')mon[m].i+=v;else mon[m].o+=v});
   $('kIn').textContent=yen(tin);$('kOut').textContent=yen(tout);$('kNet').textContent=yen(tin-tout);
-  var pend=records.filter(function(r){return r.pending&&r.date.slice(0,4)===y});$('sPending').innerHTML=pend.length?'<div class="alert">⏳ 要確認が '+pend.length+' 件あります（'+pend.map(function(r){return esc(r.memo||r.payee)}).join('、')+'）。一覧の「要確認だけ」で確認できます。</div>':'';
+  var pend=live().filter(function(r){return r.pending&&r.date.slice(0,4)===y});$('sPending').innerHTML=pend.length?'<div class="alert">⏳ 要確認が '+pend.length+' 件あります（'+pend.map(function(r){return esc(r.memo||r.payee)}).join('、')+'）。一覧の「要確認だけ」で確認できます。</div>':'';
   var h='<tr><th>科目</th><th class="n">金額</th><th class="n">件数</th></tr>';
   INCOME_ACCOUNTS.forEach(function(a){var k='income:'+a;if(acc[k])h+='<tr><td>'+a+'（収入）</td><td class="n">'+yen(acc[k])+'</td><td class="n">'+cnt[k]+'</td></tr>'});
   var seen={};accounts('expense').forEach(function(a){seen[a]=1});Object.keys(acc).forEach(function(k){if(k.indexOf('expense:')===0&&!seen[k.slice(8)])seen[k.slice(8)]=0});
@@ -451,7 +462,7 @@ function renderSum(){var y=$('sYear').value,rs=records.filter(function(r){return
   h='<tr><th>月</th><th class="n">収入</th><th class="n">経費</th><th class="n">差引</th></tr>';
   for(var i=1;i<=12;i++){var k=String(i).padStart(2,'0'),d=mon[k]||{i:0,o:0};h+='<tr><td>'+i+'月</td><td class="n">'+(d.i?yen(d.i):'-')+'</td><td class="n">'+(d.o?yen(d.o):'-')+'</td><td class="n">'+(d.i||d.o?yen(d.i-d.o):'-')+'</td></tr>'}
   h+='<tr class="total"><td>合計</td><td class="n">'+yen(tin)+'</td><td class="n">'+yen(tout)+'</td><td class="n">'+yen(tin-tout)+'</td></tr>';$('sMon').innerHTML=h;
-  var st=records.filter(isStartup).sort(function(a,b){return a.date<b.date?-1:1}),tst=0;h='<tr><th>日付</th><th>項目</th><th class="n">計上額</th></tr>';
+  var st=live().filter(isStartup).sort(function(a,b){return a.date<b.date?-1:1}),tst=0;h='<tr><th>日付</th><th>項目</th><th class="n">計上額</th></tr>';
   st.forEach(function(r){var v=counted(r);tst+=v;h+='<tr><td>'+r.date+'</td><td>'+esc(r.memo||r.payee)+'<br><span class="chip">'+esc(r.account)+'</span>'+(r.ratio<100?'<span class="chip">'+r.ratio+'%</span>':'')+'</td><td class="n">'+yen(v)+'</td></tr>'});
   h+='<tr class="total"><td colspan="2">開業費合計</td><td class="n">'+yen(tst)+'</td></tr>';$('sStartup').innerHTML=st.length?h:'<tr><td class="empty">開業費の記録はありません</td></tr>';renderSubGrid()}
 $('sYear').onchange=renderSum;
@@ -462,8 +473,8 @@ function csvCell(v){v=String(v==null?'':v);return /[",\n]/.test(v)?'"'+v.replace
 function csv(rs){var head=['日付','種別','扱い','科目','金額','事業使用割合%','計上額','取引先','品目・摘要','支払方法','参加人数','外貨額','インボイス番号','要確認','根拠メモ','領収書枚数','ID'];var lines=[head.join(',')];
   rs.slice().sort(function(a,b){return a.date<b.date?-1:1}).forEach(function(r){lines.push([r.date,TYPE_LABEL[r.type],r.treatment||'',r.account,r.amount,r.ratio==null?100:r.ratio,counted(r),r.payee,r.memo,r.pay,r.people||'',r.fx||'',r.invoice||'',r.pending?'要確認':'',r.note||'',r.pics||0,r.id].map(csvCell).join(','))});
   return new Blob(['﻿'+lines.join('\r\n')],{type:'text/csv'})}
-$('csvBtn').onclick=function(){if(!records.length){toast('記録がありません');return}download('keihi_all_'+today()+'.csv',csv(records))};
-$('csvYearBtn').onclick=function(){var y=$('sYear').value,rs=records.filter(function(r){return r.date.slice(0,4)===y||isStartup(r)});if(!rs.length){toast(y+'年の記録がありません');return}download('keihi_'+y+'.csv',csv(rs))};
+$('csvBtn').onclick=function(){if(!live().length){toast('記録がありません');return}download('keihi_all_'+today()+'.csv',csv(live()))};
+$('csvYearBtn').onclick=function(){var y=$('sYear').value,rs=live().filter(function(r){return r.date.slice(0,4)===y||isStartup(r)});if(!rs.length){toast(y+'年の記録がありません');return}download('keihi_'+y+'.csv',csv(rs))};
 // ---- マネーフォワード 仕訳帳CSV ----
 var MF_HEAD=['取引No','取引日','借方勘定科目','借方補助科目','借方部門','借方取引先','借方税区分','借方インボイス','借方金額(円)','借方税額','貸方勘定科目','貸方補助科目','貸方部門','貸方取引先','貸方税区分','貸方インボイス','貸方金額(円)','貸方税額','摘要','仕訳メモ','タグ','MF仕訳タイプ','決算整理仕訳','作成日時','作成者','最終更新日時','最終更新者'];
 var MF_ACC={'売上':'売上高','外注工賃':'外注費','貸倒金':'貸倒損失'};
@@ -480,7 +491,7 @@ function mfCsv(rs){var lines=[MF_HEAD.join(',')],no=0,warn=0;
     var row=[no,date.replace(/-/g,'/'),dr,'','',drP,'',r.invoice||'',amt,'',cr,'','',crP,'','',amt,'',note,memo,'','','','','','',''];
     lines.push(row.map(csvCell).join(','))});
   mfCsv.warn=warn;return new Blob(['﻿'+lines.join('\r\n')],{type:'text/csv'})}
-$('mfBtn').onclick=function(){var y=$('sYear').value,rs=records.filter(function(r){return r.date.slice(0,4)===y||(isStartup(r)&&settings.openDate.slice(0,4)===y)});if(!rs.length){toast(y+'年の記録がありません');return}if(!settings.openDate&&rs.some(isStartup)){alert('開業費を出すには、設定の「開業日」を入れてください');return}download('mf_shiwake_'+y+'.csv',mfCsv(rs));toast('MF用CSVを書き出しました'+(mfCsv.warn?'（要確認 '+mfCsv.warn+'件を含む）':''))};
+$('mfBtn').onclick=function(){var y=$('sYear').value,rs=live().filter(function(r){return r.date.slice(0,4)===y||(isStartup(r)&&settings.openDate.slice(0,4)===y)});if(!rs.length){toast(y+'年の記録がありません');return}if(!settings.openDate&&rs.some(isStartup)){alert('開業費を出すには、設定の「開業日」を入れてください');return}download('mf_shiwake_'+y+'.csv',mfCsv(rs));toast('MF用CSVを書き出しました'+(mfCsv.warn?'（要確認 '+mfCsv.warn+'件を含む）':''))};
 $('mfSource').onchange=function(){settings.mfSource=this.value;saveSet()};
 $('mfRatio').onchange=function(){settings.mfRatio=this.value;saveSet()};
 $('openDate').onchange=function(){settings.openDate=this.value;saveSet();checkForm()};
@@ -492,24 +503,28 @@ function backup(withImages){var out={app:'keihi',version:2,exportedAt:new Date()
   p.then(function(){download('keihi_backup_'+today()+(withImages?'':'_lite')+'.json',new Blob([JSON.stringify(out)],{type:'application/json'}));toast('バックアップを書き出しました')})}
 $('bkBtn').onclick=function(){backup(true)};
 $('bkLiteBtn').onclick=function(){backup(false)};
-function restoreJson(d){if(d.app!=='keihi')throw new Error('経費帳のバックアップではありません');
-  var have={};records.forEach(function(r){have[r.id]=1});var add=(d.records||[]).filter(function(r){return !have[r.id]});records=records.concat(add);save();
-  var s=d.settings||{};(s.customAccounts||[]).forEach(function(a){if(accounts('expense').indexOf(a)<0)settings.customAccounts.push(a)});
-  var haveSub={};settings.subs.forEach(function(x){haveSub[x.id]=1});(s.subs||[]).forEach(function(x){if(!haveSub[x.id])settings.subs.push(x)});
-  if(s.openDate&&!settings.openDate)settings.openDate=s.openDate;saveSet();
-  var ids=Object.keys(d.images||{});return ids.reduce(function(acc,k){return acc.then(function(){return getImages(k).then(function(ex){if(ex.length)return;return putImages(k,d.images[k].map(b64ToBlob))})})},Promise.resolve()).then(function(){refreshAll();return {added:add.length,images:ids.length}})}
+function live(){var out=[];for(var i=0;i<records.length;i++)if(!records[i].deleted)out.push(records[i]);return out}
+function mergeIn(d){var by={},i,added=0,updated=0;for(i=0;i<records.length;i++)by[records[i].id]=records[i];
+  (d.records||[]).forEach(function(r){var cur=by[r.id];if(!cur){by[r.id]=r;added++}else if((r.updatedAt||'')>(cur.updatedAt||'')){by[r.id]=r;updated++}});
+  records=Object.keys(by).map(function(k){return by[k]});save(true);
+  var st=d.settings||{};(st.customAccounts||[]).forEach(function(a){if(accounts('expense').indexOf(a)<0)settings.customAccounts.push(a)});
+  var sb={};settings.subs.forEach(function(x){sb[x.id]=x});(st.subs||[]).forEach(function(x){var c=sb[x.id];if(!c||(x.updatedAt||'')>(c.updatedAt||''))sb[x.id]=x});settings.subs=Object.keys(sb).map(function(k){return sb[k]});
+  if((st.updatedAt||'')>(settings.updatedAt||'')){['openDate','mfSource','mfRatio'].forEach(function(k){if(st[k]!=null)settings[k]=st[k]});settings.updatedAt=st.updatedAt}else if(st.openDate&&!settings.openDate)settings.openDate=st.openDate;
+  saveSet(true);return {added:added,updated:updated}}
+function restoreJson(d){if(d.app!=='keihi')throw new Error('経費帳のバックアップではありません');var m=mergeIn(d);
+  var ids=Object.keys(d.images||{});return ids.reduce(function(acc,k){return acc.then(function(){return getImages(k).then(function(ex){if(ex.length)return;return putImages(k,d.images[k].map(b64ToBlob)).then(function(){bumpImg(k,d.images[k].length)})})})},Promise.resolve()).then(function(){refreshAll();scheduleSync();return {added:m.added,images:ids.length}})}
 $('restoreFile').onchange=function(){var f=this.files[0];this.value='';if(!f)return;var fr=new FileReader();fr.onload=function(){try{restoreJson(JSON.parse(fr.result)).then(function(r){alert(r.added+'件を取り込みました（画像 '+r.images+'件分）')})}catch(e){alert('復元に失敗: '+e.message)}};fr.readAsText(f)};
 
 // ---------- サブスク ----------
-function renderSubs(){var b=$('subList');b.innerHTML=settings.subs.map(function(s){return '<div class="subrow'+(s.active===false?' off':'')+'"><div class="n1">'+esc(s.name)+'<small>'+esc(s.payee)+' / '+esc(s.account)+' / '+(s.active===false?'解約済み / ':'')+(s.cycle==='yearly'?'年払い':'毎'+s.day+'日')+(s.ratio<100?' / '+s.ratio+'%':'')+(s.note?' / '+esc(s.note):'')+'</small></div><div class="amt">'+yen(s.amount)+'</div><button class="btn small" data-e="'+s.id+'">編集</button></div>'}).join('')||'<span class="hint">サブスクは未登録です。下の「追加・編集」から。</span>';
+function renderSubs(){var b=$('subList');b.innerHTML=settings.subs.filter(function(s){return !s.deleted}).map(function(s){return '<div class="subrow'+(s.active===false?' off':'')+'"><div class="n1">'+esc(s.name)+'<small>'+esc(s.payee)+' / '+esc(s.account)+' / '+(s.active===false?'解約済み / ':'')+(s.cycle==='yearly'?'年払い':'毎'+s.day+'日')+(s.ratio<100?' / '+s.ratio+'%':'')+(s.note?' / '+esc(s.note):'')+'</small></div><div class="amt">'+yen(s.amount)+'</div><button class="btn small" data-e="'+s.id+'">編集</button></div>'}).join('')||'<span class="hint">サブスクは未登録です。下の「追加・編集」から。</span>';
   b.querySelectorAll('button[data-e]').forEach(function(x){x.onclick=function(){var s=settings.subs.filter(function(y){return y.id===x.dataset.e})[0];$('subId').value=s.id;$('subName').value=s.name;$('subPayee').value=s.payee;$('subAmount').value=s.amount;$('subRatio').value=s.ratio;$('subDay').value=s.day;fillAccounts($('subAccount'),'expense',s.account);$('subCycle').value=s.cycle||'monthly';$('subNote').value=s.note||'';$('subPending').checked=!!s.pending;$('subActive').checked=s.active!==false;document.querySelector('#v-set details').open=true;$('subName').focus()}})}
 $('subSaveBtn').onclick=function(){var name=$('subName').value.trim(),amt=Number($('subAmount').value);if(!name||!(amt>0)){alert('サービス名と金額を入れてください');return}
-  var s={id:$('subId').value||('sub-'+uid()),name:name,payee:$('subPayee').value.trim(),amount:Math.round(amt),ratio:Math.min(100,Math.max(0,Number($('subRatio').value)||100)),day:Math.min(31,Math.max(1,Number($('subDay').value)||1)),account:$('subAccount').value,cycle:$('subCycle').value,note:$('subNote').value.trim(),pending:$('subPending').checked,active:$('subActive').checked};
+  var s={id:$('subId').value||('sub-'+uid()),name:name,payee:$('subPayee').value.trim(),amount:Math.round(amt),ratio:Math.min(100,Math.max(0,Number($('subRatio').value)||100)),day:Math.min(31,Math.max(1,Number($('subDay').value)||1)),account:$('subAccount').value,cycle:$('subCycle').value,note:$('subNote').value.trim(),pending:$('subPending').checked,active:$('subActive').checked,updatedAt:new Date().toISOString()};
   var i=settings.subs.findIndex(function(x){return x.id===s.id});if(i>=0)settings.subs[i]=s;else settings.subs.push(s);saveSet();subClear();renderSubs();toast('保存しました')};
 function subClear(){$('subId').value='';['subName','subPayee','subAmount','subNote'].forEach(function(id){$(id).value=''});$('subRatio').value='100';$('subDay').value='1';$('subCycle').value='monthly';$('subPending').checked=false;$('subActive').checked=true}
-$('subClearBtn').onclick=function(){if($('subId').value&&confirm('このサブスクを一覧から削除しますか？（記録済みの経費は残ります）')){settings.subs=settings.subs.filter(function(x){return x.id!==$('subId').value});saveSet();renderSubs()}subClear()};
-function monthlySubs(){return settings.subs.filter(function(s){return s.active!==false&&s.cycle!=='yearly'})}
-function subRecord(s,m){return records.filter(function(r){return r.date.indexOf(m)===0&&r.memo===s.name&&r.payee===s.payee})[0]}
+$('subClearBtn').onclick=function(){if($('subId').value&&confirm('このサブスクを一覧から削除しますか？（記録済みの経費は残ります）')){settings.subs=settings.subs.map(function(x){return x.id===$('subId').value?Object.assign({},x,{deleted:true,active:false,updatedAt:new Date().toISOString()}):x});saveSet();renderSubs()}subClear()};
+function monthlySubs(){return settings.subs.filter(function(s){return !s.deleted&&s.active!==false&&s.cycle!=='yearly'})}
+function subRecord(s,m){return live().filter(function(r){return r.date.indexOf(m)===0&&r.memo===s.name&&r.payee===s.payee})[0]}
 function addSubsForMonth(m){var n=0,skip=[];
   monthlySubs().forEach(function(s){if(subRecord(s,m)){skip.push(s.name);return}
     var last=new Date(Number(m.slice(0,4)),Number(m.slice(5,7)),0).getDate(),date=m+'-'+String(Math.min(s.day,last)).padStart(2,'0');
@@ -520,7 +535,7 @@ $('subAddMonthBtn').onclick=function(){var m=$('subMonth').value;if(!m){alert('�
 function fillSubsYm(){var s=$('subsYm'),v=s.value;s.innerHTML='';var d=new Date();for(var i=0;i<14;i++){var y=d.getFullYear(),m=d.getMonth()+1,ym=y+'-'+String(m).padStart(2,'0');var o=document.createElement('option');o.value=ym;o.textContent=y+'年'+m+'月';s.appendChild(o);d.setMonth(d.getMonth()-1)}s.value=v||today().slice(0,7)}
 function renderSubsCard(){var m=$('subsYm').value,subs=monthlySubs(),box=$('subsStatus'),miss=0,h='';
   subs.forEach(function(s){var r=subRecord(s,m);if(!r)miss++;h+='<div class="st"><span class="'+(r?'ok':'no')+'">'+(r?'✓':'−')+'</span><div class="n1">'+esc(s.name)+'<small>'+esc(s.payee)+'</small></div><div class="amt">'+(r?yen(counted(r))+(r.pending?' ⏳':''):'<span style="color:var(--muted)">未登録</span>')+'</div></div>'});
-  var yearly=settings.subs.filter(function(s){return s.active!==false&&s.cycle==='yearly'});if(yearly.length)h+='<p class="hint">年払い（月次追加の対象外）: '+yearly.map(function(s){return esc(s.name)+' '+yen(s.amount)}).join('、')+'</p>';
+  var yearly=settings.subs.filter(function(s){return !s.deleted&&s.active!==false&&s.cycle==='yearly'});if(yearly.length)h+='<p class="hint">年払い（月次追加の対象外）: '+yearly.map(function(s){return esc(s.name)+' '+yen(s.amount)}).join('、')+'</p>';
   box.innerHTML=subs.length?h:'<p class="hint">サブスクが未登録です。設定タブの「毎月のサブスク」で登録してください。</p>';
   var b=$('subsAddBtn');b.textContent=miss?'未登録の '+miss+' 件をまとめて追加':'この月のサブスクは全部登録済み ✓';b.disabled=!miss;b.style.opacity=miss?'1':'.5';
   mountStmt($('stmtBox'),m)}
@@ -529,8 +544,8 @@ $('subsAddBtn').onclick=function(){var m=$('subsYm').value,r=addSubsForMonth(m);
 // ---- 月次カード明細スクショ（IndexedDB key: stmt:YYYY-MM） ----
 function mountStmt(container,ym){var key='stmt:'+ym;container.innerHTML='<div class="thumbs"></div><div class="btns"><label class="btn small">📷 撮影<input type="file" accept="image/*" capture="environment" hidden></label><label class="btn small">🖼 スクショを追加<input type="file" accept="image/*" multiple hidden></label><span class="hint" style="margin:auto 0"></span></div>';
   var thumbs=container.querySelector('.thumbs'),inputs=container.querySelectorAll('input'),hint=container.querySelector('.hint'),arr=[];
-  function draw(){renderThumbs(thumbs,arr,function(i){if(!confirm('この明細スクショを削除しますか？'))return;arr.splice(i,1);putImages(key,arr.slice()).then(draw)},function(i){return ym+'_楽天カード明細'+(i?'-'+(i+1):'')});hint.textContent=arr.length?arr.length+'枚保存済み':'未保存。楽天e-NAVIの当月明細をスクショして追加'}
-  inputs.forEach(function(inp){inp.onchange=function(){addFiles(this.files,arr,function(){putImages(key,arr.slice()).then(draw)});this.value=''}});
+  function draw(){renderThumbs(thumbs,arr,function(i){if(!confirm('この明細スクショを削除しますか？'))return;arr.splice(i,1);putImages(key,arr.slice()).then(function(){bumpImg(key,arr.length);draw()})},function(i){return ym+'_楽天カード明細'+(i?'-'+(i+1):'')});hint.textContent=arr.length?arr.length+'枚保存済み':'未保存。楽天e-NAVIの当月明細をスクショして追加'}
+  inputs.forEach(function(inp){inp.onchange=function(){addFiles(this.files,arr,function(){putImages(key,arr.slice()).then(function(){bumpImg(key,arr.length);draw()})});this.value=''}});
   getImages(key).then(function(bs){arr=bs.slice();draw()})}
 function stmtCounts(){return allImageKeys().then(function(ks){var o={};ks.forEach(function(k){if(String(k).indexOf('stmt:')===0)o[String(k).slice(5)]=1});return Promise.all(Object.keys(o).map(function(ym){return getImages('stmt:'+ym).then(function(bs){o[ym]=bs.length})})).then(function(){return o})})}
 function renderSubGrid(){var y=$('sYear').value,subs=monthlySubs(),ms=[];for(var i=1;i<=12;i++)ms.push(y+'-'+String(i).padStart(2,'0'));
@@ -542,9 +557,54 @@ function renderSubGrid(){var y=$('sYear').value,subs=monthlySubs(),ms=[];for(var
 // ---------- 設定 ----------
 $('addAccBtn').onclick=function(){var v=$('newAcc').value.trim();if(!v)return;if(accounts('expense').indexOf(v)>=0){toast('すでにあります');return}settings.customAccounts.push(v);saveSet();$('newAcc').value='';refreshAll();toast('追加しました')};
 function renderAccList(){var b=$('accList');b.innerHTML=(settings.customAccounts||[]).map(function(a){return '<span class="chip">'+esc(a)+' <a href="#" data-a="'+esc(a)+'">✕</a></span>'}).join('')||'<span class="hint">追加した科目はありません（標準の科目は決算書と同じ並び）</span>';
-  b.querySelectorAll('a').forEach(function(x){x.onclick=function(e){e.preventDefault();var a=x.dataset.a;if(records.some(function(r){return r.account===a})){alert('この科目を使っている記録があるので消せません');return}settings.customAccounts=settings.customAccounts.filter(function(y){return y!==a});saveSet();refreshAll()}})}
+  b.querySelectorAll('a').forEach(function(x){x.onclick=function(e){e.preventDefault();var a=x.dataset.a;if(live().some(function(r){return r.account===a})){alert('この科目を使っている記録があるので消せません');return}settings.customAccounts=settings.customAccounts.filter(function(y){return y!==a});saveSet();refreshAll()}})}
 function renderLog(){var b=$('logBox');b.innerHTML=log.slice().reverse().slice(0,50).map(function(l){var r=l.before;return esc(l.ts.slice(0,16).replace('T',' '))+' <b>'+l.action+'</b> '+esc(r.date)+' '+esc(r.account)+' '+yen(r.amount)+' '+esc(r.memo||r.payee)+(l.after?' → '+esc(l.after.date)+' '+esc(l.after.account)+' '+yen(l.after.amount)+' '+esc(l.after.memo||l.after.payee):'')}).join('<br>')||'<span>まだ履歴はありません</span>'}
-$('wipeBtn').onclick=function(){if(!confirm('本当に全部消しますか？先にバックアップを取りましたか？'))return;if(prompt('確認のため「消す」と入力してください')!=='消す')return;records=[];log=[];save();saveLog();allImageKeys().then(function(ks){return Promise.all(ks.map(delImages))}).then(function(){refreshAll();toast('消しました')})};
+$('wipeBtn').onclick=function(){if(!confirm('本当に全部消しますか？先にバックアップを取りましたか？'))return;if(prompt('確認のため「消す」と入力してください')!=='消す')return;records=[];log=[];imgVer={};localStorage.removeItem('keihi.imgver');save(true);saveLog();allImageKeys().then(function(ks){return Promise.all(ks.map(delImages))}).then(function(){refreshAll();toast('消しました')})};
+
+// ---------- 同期（GitHub 非公開リポジトリ） ----------
+var imgVer=load('keihi.imgver',{});
+function bumpImg(key,n){imgVer[key]={t:new Date().toISOString(),n:n};localStorage.setItem('keihi.imgver',JSON.stringify(imgVer));scheduleSync()}
+var syncCfg=load('keihi.sync.v1',{repo:'pongit-app/keihi-data',token:'',auto:true,last:''});
+var syncTimer=null,syncing=false,syncDirty=false;
+function saveSync(){localStorage.setItem('keihi.sync.v1',JSON.stringify(syncCfg))}
+function syncEnabled(){return !!(syncCfg.token&&syncCfg.repo)}
+function setCloud(state,msg){var b=$('cloudBtn');b.textContent={off:'☁️',ok:'☁️✓',busy:'☁️…',err:'☁️!',dirty:'☁️↑'}[state]||'☁️';b.title=msg||'';$('syncStatus').textContent=msg||''}
+function scheduleSync(){if(!syncEnabled()||!syncCfg.auto)return;syncDirty=true;setCloud('dirty','未同期の変更あり');clearTimeout(syncTimer);syncTimer=setTimeout(function(){syncNow()},3000)}
+function ghFetch(method,path,body){return fetch('https://api.github.com/repos/'+syncCfg.repo+'/contents/'+path,{method:method,cache:'no-store',headers:{'Authorization':'Bearer '+syncCfg.token,'Accept':'application/vnd.github+json','X-GitHub-Api-Version':'2022-11-28','Content-Type':'application/json'},body:body?JSON.stringify(body):undefined}).then(function(res){if(res.status===404)return null;if(!res.ok)return res.text().then(function(t){throw new Error('GitHub '+res.status+' '+t.slice(0,100))});return res.json()})}
+function ghGet(path){return ghFetch('GET',path)}
+function ghPut(path,b64,sha,msg){var body={message:msg||'keihi sync',content:b64};if(sha)body.sha=sha;return ghFetch('PUT',path,body)}
+function ghDel(path,sha){return ghFetch('DELETE',path,{message:'keihi sync delete',sha:sha})}
+function utf8b64(str){return btoa(unescape(encodeURIComponent(str)))}
+function b64utf8(b){return decodeURIComponent(escape(atob(b.replace(/\n/g,''))))}
+function imgPath(key){return 'img/'+key.replace(/[^A-Za-z0-9_-]/g,'_')}
+function ghFileBlob(f){if(f&&f.content&&f.encoding==='base64')return Promise.resolve(b64ToBlob(f.content.replace(/\n/g,'')));return fetch(f.download_url,{cache:'no-store'}).then(function(r){return r.blob()})}
+function pushImages(key,n){var dir=imgPath(key);return ghGet(dir).then(function(list){var ex={};(Array.isArray(list)?list:[]).forEach(function(f){ex[f.name]=f.sha});
+  return getImages(key).then(function(bs){bs=bs.slice(0,n);return bs.reduce(function(p,b,i){return p.then(function(){return blobToB64(b).then(function(b64){return ghPut(dir+'/'+i+'.jpg',b64,ex[i+'.jpg'],'img '+key)})})},Promise.resolve()).then(function(){
+    return Object.keys(ex).reduce(function(p,name){if(parseInt(name)<bs.length)return p;return p.then(function(){return ghDel(dir+'/'+name,ex[name])})},Promise.resolve())})})})}
+function pullImages(key,r){var dir=imgPath(key);if(!r.n)return putImages(key,[]);return ghGet(dir).then(function(list){var files=(Array.isArray(list)?list:[]).filter(function(f){return /^\d+\.jpg$/.test(f.name)}).sort(function(a,b){return parseInt(a.name)-parseInt(b.name)});
+  return files.reduce(function(p,f){return p.then(function(arr){return ghGet(dir+'/'+f.name).then(ghFileBlob).then(function(b){arr.push(b);return arr})})},Promise.resolve([])).then(function(arr){return putImages(key,arr)})})}
+function syncNow(){if(!syncEnabled()){setCloud('off','設定タブでトークンを入れると同期できます');return Promise.resolve()}if(syncing){syncDirty=true;return Promise.resolve()}syncing=true;syncDirty=false;setCloud('busy','同期中…');
+  var remote=null,sha=null,pulled=0,pushed=0;
+  return ghGet('keihi.json').then(function(f){if(f&&f.content){sha=f.sha;remote=JSON.parse(b64utf8(f.content))}
+    if(remote){var m=mergeIn(remote);pulled=m.added+m.updated}
+    var rv=remote&&remote.imgVer||{},keys={};Object.keys(imgVer).forEach(function(k){keys[k]=1});Object.keys(rv).forEach(function(k){keys[k]=1});
+    return Object.keys(keys).reduce(function(p,k){return p.then(function(){var l=imgVer[k],r=rv[k];
+      if(l&&(!r||l.t>r.t)){pushed++;return pushImages(k,l.n)}
+      if(r&&(!l||r.t>l.t))return pullImages(k,r).then(function(){imgVer[k]=r;localStorage.setItem('keihi.imgver',JSON.stringify(imgVer))})})},Promise.resolve())
+  }).then(function(){
+    var mine=JSON.stringify({s:settings,r:records,i:imgVer});
+    if(remote&&JSON.stringify({s:remote.settings,r:remote.records,i:remote.imgVer||{}})===mine)return;
+    var out={app:'keihi',version:2,exportedAt:new Date().toISOString(),settings:settings,records:records,imgVer:imgVer};
+    return ghPut('keihi.json',utf8b64(JSON.stringify(out)),sha,'keihi sync '+new Date().toISOString().slice(0,16).replace('T',' '))
+  }).then(function(){syncCfg.last=new Date().toISOString();saveSync();syncing=false;refreshAll();setCloud('ok','同期済み '+syncCfg.last.slice(0,16).replace('T',' ')+(pulled?'（取り込み '+pulled+'件）':''));if(syncDirty)scheduleSync()})
+  .catch(function(e){syncing=false;setCloud('err','同期エラー: '+e.message);console.error(e)})}
+$('syncRepo').value=syncCfg.repo;$('syncToken').value=syncCfg.token;$('syncAuto').checked=syncCfg.auto!==false;
+function readSyncForm(){syncCfg.repo=$('syncRepo').value.trim();syncCfg.token=$('syncToken').value.trim();syncCfg.auto=$('syncAuto').checked;saveSync()}
+['syncRepo','syncToken','syncAuto'].forEach(function(id){$(id).addEventListener('change',readSyncForm)});
+$('syncTestBtn').onclick=function(){readSyncForm();if(!syncEnabled()){alert('保存先とトークンを入れてください');return}setCloud('busy','接続確認中…');fetch('https://api.github.com/repos/'+syncCfg.repo,{cache:'no-store',headers:{'Authorization':'Bearer '+syncCfg.token,'Accept':'application/vnd.github+json'}}).then(function(r){if(!r.ok)throw new Error('GitHub '+r.status+'（トークンかリポジトリ名を確認）');return r.json()}).then(function(j){if(!j.permissions||!j.permissions.push)throw new Error('書き込み権限がありません（Contents: Read and write が必要）');setCloud('ok','接続OK: '+j.full_name+(j.private?'（非公開）':'（⚠公開リポジトリです）'))}).catch(function(e){setCloud('err',e.message)})};
+$('syncNowBtn').onclick=function(){readSyncForm();syncNow()};
+$('cloudBtn').onclick=function(){if(syncEnabled())syncNow();else{showView('set');$('syncCard').scrollIntoView();$('syncToken').focus()}};
+document.addEventListener('visibilitychange',function(){if(document.visibilityState==='visible'&&syncEnabled()&&syncCfg.auto&&(!syncCfg.last||Date.now()-Date.parse(syncCfg.last)>60000))syncNow()});
 
 // ---------- テーマ・画面 ----------
 function applyTheme(t){document.documentElement.setAttribute('data-theme',t);$('themeBtn').textContent=t==='dark'?'☀️':'🌙';document.querySelector('meta[name=theme-color]').content=t==='dark'?'#12151b':'#f6f7f9'}
@@ -554,7 +614,7 @@ function showView(v){document.querySelectorAll('section.view').forEach(function(
 document.querySelectorAll('nav.tabs button').forEach(function(b){b.onclick=function(){showView(b.dataset.v)}});
 function refreshAll(){fillPayees();fillPeriods();renderList();fillYears();renderSum();renderAccList();renderLog();renderSubs();renderSubsCard();$('openDate').value=settings.openDate;$('mfSource').value=settings.mfSource;$('mfRatio').value=settings.mfRatio}
 fillAccounts($('subAccount'),'expense','通信費');$('subMonth').value=today().slice(0,7);fillSubsYm();
-setType('expense');resetForm();refreshAll();
+setType('expense');resetForm();refreshAll();if(syncEnabled()){syncNow()}else{setCloud('off','')}
 </script>
 </body>
 </html>
