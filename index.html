@@ -51,6 +51,10 @@ textarea{min-height:56px;resize:vertical}
 .thumbs{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px}
 .thumbs .t{position:relative;width:84px;height:84px;border-radius:10px;overflow:hidden;border:1px solid var(--line);background:var(--chip)}
 .thumbs .t img{width:100%;height:100%;object-fit:cover;display:block}
+.thumbs .t .pdf{width:100%;height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;font-size:11px;color:var(--danger);font-weight:700;background:#fff}
+.thumbs .t .pdf span{font-size:28px}
+:root[data-theme="dark"] .thumbs .t .pdf{background:#2a2f3a}
+.viewer iframe{width:100%;height:100%;border:0;background:#fff}
 .thumbs .t button{position:absolute;top:2px;right:2px;background:rgba(0,0,0,.55);color:#fff;border:0;border-radius:999px;width:22px;height:22px;font-size:13px;line-height:22px;padding:0}
 .hint{font-size:12px;color:var(--muted);margin:6px 0 0;line-height:1.5}
 .alert{font-size:12px;color:var(--warn);background:var(--warn-soft);border-radius:8px;padding:6px 10px;margin:4px 0 8px;line-height:1.5}
@@ -162,13 +166,13 @@ h2 select{width:auto;font-size:13px;padding:4px 8px;margin-left:6px}
       <label class="chk"><input type="checkbox" id="fPending"> 要確認（円額が未確定・解約状況不明など）</label>
     </details>
     <div>
-      <span style="font-size:12px;color:var(--muted)">領収書・レシート（写真 / スクショ）</span>
+      <span style="font-size:12px;color:var(--muted)">領収書・レシート（写真 / スクショ / PDF）</span>
       <div class="btns">
         <label class="btn">📷 撮影<input type="file" accept="image/*" capture="environment" hidden id="fCam"></label>
-        <label class="btn">🖼 写真・スクショから選ぶ<input type="file" accept="image/*" multiple hidden id="fPick"></label>
+        <label class="btn">🖼 写真・スクショ・PDF<input type="file" accept="image/*,application/pdf,.pdf" multiple hidden id="fPick"></label>
       </div>
       <div class="thumbs" id="fThumbs"></div>
-      <p class="hint">Macでは画面にスクショを ⌘V で貼り付けても追加できます。画像は長辺1800pxに縮小して端末内に保存します。</p>
+      <p class="hint">Macでは画面にスクショを ⌘V で貼り付けても追加できます。画像は長辺1800pxに縮小、PDFはそのまま端末内に保存します（1件8MBまで）。</p>
     </div>
   </div>
   <button class="btn primary" id="saveBtn">保存する</button>
@@ -299,7 +303,7 @@ h2 select{width:auto;font-size:13px;padding:4px 8px;margin-left:6px}
 
 <div class="sheet-bg" id="sheetBg"></div>
 <div class="sheet" id="sheet"><div class="bar"></div><div id="sheetBody"></div></div>
-<div class="viewer" id="viewer"><img id="viewerImg" alt=""><button id="viewerSave" title="画像を保存">💾</button><button id="viewerClose">✕</button></div>
+<div class="viewer" id="viewer"><img id="viewerImg" alt=""><iframe id="viewerPdf" style="display:none"></iframe><button id="viewerSave" title="画像を保存">💾</button><button id="viewerClose">✕</button></div>
 <div class="toast" id="toast"></div>
 
 <script>
@@ -345,12 +349,16 @@ function getImages(id){return idb('readonly',function(s){return s.get(id)}).then
 function delImages(id){return idb('readwrite',function(s){s.delete(id)})}
 function allImageKeys(){return idb('readonly',function(s){return s.getAllKeys()})}
 function shrink(file){return new Promise(function(res,rej){var img=new Image(),url=URL.createObjectURL(file);img.onload=function(){var w=img.naturalWidth,h=img.naturalHeight,k=Math.min(1,MAX_EDGE/Math.max(w,h));var c=document.createElement('canvas');c.width=Math.round(w*k);c.height=Math.round(h*k);var g=c.getContext('2d');g.fillStyle='#fff';g.fillRect(0,0,c.width,c.height);g.drawImage(img,0,0,c.width,c.height);URL.revokeObjectURL(url);c.toBlob(function(b){b?res(b):rej(new Error('toBlob failed'))},'image/jpeg',JPEG_Q)};img.onerror=function(){URL.revokeObjectURL(url);rej(new Error('画像を読めませんでした'))};img.src=url})}
-function addFiles(files,target,render){var arr=Array.prototype.slice.call(files||[]).filter(function(f){return /^image\//.test(f.type)});if(!arr.length)return;Promise.all(arr.map(shrink)).then(function(bs){bs.forEach(function(b){target.push(b)});render();toast(bs.length+'枚追加')}).catch(function(e){alert(e.message)})}
+function isPdf(b){return b&&b.type==='application/pdf'}
+function addFiles(files,target,render){var arr=Array.prototype.slice.call(files||[]).filter(function(f){return /^image\//.test(f.type)||f.type==='application/pdf'||/\.pdf$/i.test(f.name)});if(!arr.length){toast('画像かPDFを選んでください');return}
+  var big=arr.filter(function(f){return !/^image\//.test(f.type)&&f.size>8*1024*1024});if(big.length){alert('8MBを超えるPDFは保存できません: '+big.map(function(f){return f.name}).join(', '));return}
+  Promise.all(arr.map(function(f){return /^image\//.test(f.type)?shrink(f):Promise.resolve(new Blob([f],{type:'application/pdf'}))})).then(function(bs){bs.forEach(function(b){target.push(b)});render();toast(bs.length+'件追加')}).catch(function(e){alert(e.message)})}
 var viewerName='receipt.jpg';
-function renderThumbs(box,arr,onRemove,nameFn){box.innerHTML='';arr.forEach(function(b,i){var d=document.createElement('div');d.className='t';var im=document.createElement('img');im.src=URL.createObjectURL(b);im.onclick=function(){viewerName=(nameFn?nameFn(i):'receipt')+'.jpg';openViewer(im.src)};var x=document.createElement('button');x.textContent='✕';x.onclick=function(e){e.stopPropagation();onRemove(i)};d.appendChild(im);d.appendChild(x);box.appendChild(d)})}
-function openViewer(src){$('viewerImg').src=src;$('viewer').classList.add('on')}
+function renderThumbs(box,arr,onRemove,nameFn){box.innerHTML='';arr.forEach(function(b,i){var d=document.createElement('div');d.className='t';var im,url=URL.createObjectURL(b);if(isPdf(b)){im=document.createElement('div');im.className='pdf';im.innerHTML='<span>📄</span>PDF'}else{im=document.createElement('img');im.src=url}im.onclick=function(){viewerName=(nameFn?nameFn(i):'receipt')+(isPdf(b)?'.pdf':'.jpg');openViewer(url,isPdf(b))};var x=document.createElement('button');x.textContent='✕';x.onclick=function(e){e.stopPropagation();onRemove(i)};d.appendChild(im);d.appendChild(x);box.appendChild(d)})}
+function openViewer(src,pdf){$('viewerImg').style.display=pdf?'none':'';$('viewerPdf').style.display=pdf?'block':'none';if(pdf){$('viewerPdf').src=src;$('viewerImg').src=''}else{$('viewerImg').src=src;$('viewerPdf').src='about:blank'}$('viewer').classList.add('on');viewerSrc=src}
+var viewerSrc='';
 $('viewerClose').onclick=function(){$('viewer').classList.remove('on')};
-$('viewerSave').onclick=function(){var a=document.createElement('a');a.href=$('viewerImg').src;a.download=viewerName;a.click()};
+$('viewerSave').onclick=function(){var a=document.createElement('a');a.href=viewerSrc;a.download=viewerName;document.body.appendChild(a);a.click();a.remove()};
 $('viewer').onclick=function(e){if(e.target.id==='viewer')this.classList.remove('on')};
 function receiptName(r,i){return r.date+'_'+(r.memo||r.payee||'領収書').replace(/[\/\\:*?"<>|]/g,'')+'_'+r.amount+(i?'-'+(i+1):'')}
 
@@ -423,7 +431,7 @@ function openEdit(id){var r=live().filter(function(x){return x.id===id})[0];if(!
   +'<label class="f"><span>根拠メモ</span><textarea id="eNote">'+esc(r.note)+'</textarea></label>'
   +'<div class="row"><label class="f"><span>インボイス番号</span><input type="text" id="eInvoice" value="'+esc(r.invoice)+'"></label><label class="f"><span>外貨額</span><input type="text" id="eFx" value="'+esc(r.fx)+'"></label></div>'
   +'<label class="chk"><input type="checkbox" id="ePending" '+(r.pending?'checked':'')+'> 要確認</label>'
-  +'<div><span style="font-size:12px;color:var(--muted)">領収書（タップで拡大・💾で保存）</span><div class="btns"><label class="btn small">📷 撮影<input type="file" accept="image/*" capture="environment" hidden id="eCam"></label><label class="btn small">🖼 追加<input type="file" accept="image/*" multiple hidden id="ePick"></label></div><div class="thumbs" id="eThumbs"></div></div>'
+  +'<div><span style="font-size:12px;color:var(--muted)">領収書（タップで拡大・💾で保存）</span><div class="btns"><label class="btn small">📷 撮影<input type="file" accept="image/*" capture="environment" hidden id="eCam"></label><label class="btn small">🖼 追加（画像・PDF）<input type="file" accept="image/*,application/pdf,.pdf" multiple hidden id="ePick"></label></div><div class="thumbs" id="eThumbs"></div></div>'
   +'<div class="btns" style="margin-top:14px"><button class="btn primary" id="eSave" style="width:auto;flex:1">更新</button><button class="btn" id="eClose">閉じる</button><button class="btn danger" id="eDel">削除</button></div>'
   +'<p class="hint">登録 '+r.createdAt.slice(0,16).replace('T',' ')+'　更新 '+r.updatedAt.slice(0,16).replace('T',' ')+'</p>';
   var et=r.type;fillAccounts(b.querySelector('#eAccount'),et,r.account);b.querySelector('#ePay').value=r.pay||'現金';if(r.treatment)b.querySelector('#eTreat').value=r.treatment;
@@ -496,10 +504,11 @@ $('mfSource').onchange=function(){settings.mfSource=this.value;saveSet()};
 $('mfRatio').onchange=function(){settings.mfRatio=this.value;saveSet()};
 $('openDate').onchange=function(){settings.openDate=this.value;saveSet();checkForm()};
 function blobToB64(b){return new Promise(function(res){var fr=new FileReader();fr.onload=function(){res(fr.result.split(',')[1])};fr.readAsDataURL(b)})}
-function b64ToBlob(s){var bin=atob(s),u=new Uint8Array(bin.length);for(var i=0;i<bin.length;i++)u[i]=bin.charCodeAt(i);return new Blob([u],{type:'image/jpeg'})}
+function b64ToBlob(s,type){if(s&&typeof s==='object'){type=s.t;s=s.d}var bin=atob(s),u=new Uint8Array(bin.length);for(var i=0;i<bin.length;i++)u[i]=bin.charCodeAt(i);return new Blob([u],{type:type||'image/jpeg'})}
+function blobToExport(b){return blobToB64(b).then(function(d){return isPdf(b)?{t:'application/pdf',d:d}:d})}
 function backup(withImages){var out={app:'keihi',version:2,exportedAt:new Date().toISOString(),settings:settings,records:records,log:log,images:{}};
   var p=Promise.resolve();
-  if(withImages){p=allImageKeys().then(function(keys){return keys.reduce(function(acc,k){return acc.then(function(){return getImages(k).then(function(bs){return Promise.all(bs.map(blobToB64)).then(function(arr){if(arr.length)out.images[k]=arr})})})},Promise.resolve())})}
+  if(withImages){p=allImageKeys().then(function(keys){return keys.reduce(function(acc,k){return acc.then(function(){return getImages(k).then(function(bs){return Promise.all(bs.map(blobToExport)).then(function(arr){if(arr.length)out.images[k]=arr})})})},Promise.resolve())})}
   p.then(function(){download('keihi_backup_'+today()+(withImages?'':'_lite')+'.json',new Blob([JSON.stringify(out)],{type:'application/json'}));toast('バックアップを書き出しました')})}
 $('bkBtn').onclick=function(){backup(true)};
 $('bkLiteBtn').onclick=function(){backup(false)};
@@ -542,7 +551,7 @@ function renderSubsCard(){var m=$('subsYm').value,subs=monthlySubs(),box=$('subs
 $('subsYm').onchange=renderSubsCard;
 $('subsAddBtn').onclick=function(){var m=$('subsYm').value,r=addSubsForMonth(m);toast(r.n+'件追加しました');$('recentHint').textContent=m+' のサブスク '+r.n+' 件を追加（金額が違う月は一覧から直してください）'};
 // ---- 月次カード明細スクショ（IndexedDB key: stmt:YYYY-MM） ----
-function mountStmt(container,ym){var key='stmt:'+ym;container.innerHTML='<div class="thumbs"></div><div class="btns"><label class="btn small">📷 撮影<input type="file" accept="image/*" capture="environment" hidden></label><label class="btn small">🖼 スクショを追加<input type="file" accept="image/*" multiple hidden></label><span class="hint" style="margin:auto 0"></span></div>';
+function mountStmt(container,ym){var key='stmt:'+ym;container.innerHTML='<div class="thumbs"></div><div class="btns"><label class="btn small">📷 撮影<input type="file" accept="image/*" capture="environment" hidden></label><label class="btn small">🖼 スクショ・PDFを追加<input type="file" accept="image/*,application/pdf,.pdf" multiple hidden></label><span class="hint" style="margin:auto 0"></span></div>';
   var thumbs=container.querySelector('.thumbs'),inputs=container.querySelectorAll('input'),hint=container.querySelector('.hint'),arr=[];
   function draw(){renderThumbs(thumbs,arr,function(i){if(!confirm('この明細スクショを削除しますか？'))return;arr.splice(i,1);putImages(key,arr.slice()).then(function(){bumpImg(key,arr.length);draw()})},function(i){return ym+'_楽天カード明細'+(i?'-'+(i+1):'')});hint.textContent=arr.length?arr.length+'枚保存済み':'未保存。楽天e-NAVIの当月明細をスクショして追加'}
   inputs.forEach(function(inp){inp.onchange=function(){addFiles(this.files,arr,function(){putImages(key,arr.slice()).then(function(){bumpImg(key,arr.length);draw()})});this.value=''}});
@@ -577,11 +586,11 @@ function ghDel(path,sha){return ghFetch('DELETE',path,{message:'keihi sync delet
 function utf8b64(str){return btoa(unescape(encodeURIComponent(str)))}
 function b64utf8(b){return decodeURIComponent(escape(atob(b.replace(/\n/g,''))))}
 function imgPath(key){return 'img/'+key.replace(/[^A-Za-z0-9_-]/g,'_')}
-function ghFileBlob(f){if(f&&f.content&&f.encoding==='base64')return Promise.resolve(b64ToBlob(f.content.replace(/\n/g,'')));return fetch(f.download_url,{cache:'no-store'}).then(function(r){return r.blob()})}
+function ghFileBlob(f){var type=/\.pdf$/i.test(f.name)?'application/pdf':'image/jpeg';if(f&&f.content&&f.encoding==='base64')return Promise.resolve(b64ToBlob(f.content.replace(/\n/g,''),type));return fetch(f.download_url,{cache:'no-store'}).then(function(r){return r.blob()}).then(function(b){return new Blob([b],{type:type})})}
 function pushImages(key,n){var dir=imgPath(key);return ghGet(dir).then(function(list){var ex={};(Array.isArray(list)?list:[]).forEach(function(f){ex[f.name]=f.sha});
-  return getImages(key).then(function(bs){bs=bs.slice(0,n);return bs.reduce(function(p,b,i){return p.then(function(){return blobToB64(b).then(function(b64){return ghPut(dir+'/'+i+'.jpg',b64,ex[i+'.jpg'],'img '+key)})})},Promise.resolve()).then(function(){
-    return Object.keys(ex).reduce(function(p,name){if(parseInt(name)<bs.length)return p;return p.then(function(){return ghDel(dir+'/'+name,ex[name])})},Promise.resolve())})})})}
-function pullImages(key,r){var dir=imgPath(key);if(!r.n)return putImages(key,[]);return ghGet(dir).then(function(list){var files=(Array.isArray(list)?list:[]).filter(function(f){return /^\d+\.jpg$/.test(f.name)}).sort(function(a,b){return parseInt(a.name)-parseInt(b.name)});
+  return getImages(key).then(function(bs){bs=bs.slice(0,n);var names={};return bs.reduce(function(p,b,i){var nm=i+(isPdf(b)?'.pdf':'.jpg');names[nm]=1;return p.then(function(){return blobToB64(b).then(function(b64){return ghPut(dir+'/'+nm,b64,ex[nm],'img '+key)})})},Promise.resolve()).then(function(){
+    return Object.keys(ex).reduce(function(p,name){if(names[name])return p;return p.then(function(){return ghDel(dir+'/'+name,ex[name])})},Promise.resolve())})})})}
+function pullImages(key,r){var dir=imgPath(key);if(!r.n)return putImages(key,[]);return ghGet(dir).then(function(list){var files=(Array.isArray(list)?list:[]).filter(function(f){return /^\d+\.(jpg|pdf)$/i.test(f.name)}).sort(function(a,b){return parseInt(a.name)-parseInt(b.name)});
   return files.reduce(function(p,f){return p.then(function(arr){return ghGet(dir+'/'+f.name).then(ghFileBlob).then(function(b){arr.push(b);return arr})})},Promise.resolve([])).then(function(arr){return putImages(key,arr)})})}
 function syncNow(){if(!syncEnabled()){setCloud('off','設定タブでトークンを入れると同期できます');return Promise.resolve()}if(syncing){syncDirty=true;return Promise.resolve()}syncing=true;syncDirty=false;setCloud('busy','同期中…');
   var remote=null,sha=null,pulled=0,pushed=0;
